@@ -6,12 +6,27 @@ ESP8266WebServer server(80);
 
 bool attackRunning = false;
 String targetSSID = "";
+int currentChannel = 1; // Channel for Wi-Fi operations
+
+// Access point structure
+struct AccessPoint {
+  String essid;
+  int channel;
+  uint8_t deauthPacket[26]; // Placeholder for deauth packet
+  bool found;
+};
+
+AccessPoint access_points[50]; // Array to store discovered APs
+int current = -1;
 
 // Function prototypes
 void handleScan();
 void handleStartAttack();
 void handleStopAttack();
 void sendDeauth(String ssid);
+void scan();
+void promisc_cb(uint8_t* buf, uint16_t len);
+void clean_ap_list();
 
 void setup() {
   Serial.begin(115200);
@@ -31,7 +46,7 @@ void setup() {
     File file = LittleFS.open("/index.html", "r");
   
     if (!file) {
-      Serial.println("could not open file for read");
+      Serial.println("Could not open file for read");
       server.send(500, "application/json",
                   "{\"error\":\"could not open file\"}");
     } else {
@@ -59,10 +74,10 @@ void loop() {
 
 // Function definitions
 void handleScan() {
-  int n = WiFi.scanNetworks();
+  scan(); // Perform a scan for access points
   String list = "";
-  for (int i = 0; i < n; ++i) {
-    list += WiFi.SSID(i) + "\n";
+  for (int i = 0; i <= current; ++i) {
+    list += "SSID: " + access_points[i].essid + ", Channel: " + String(access_points[i].channel) + "\n";
   }
   server.send(200, "text/plain", list);
 }
@@ -83,9 +98,65 @@ void handleStopAttack() {
 }
 
 void sendDeauth(String ssid) {
-  // Very basic pseudo function
-  // In reality, you need packet injection
   Serial.println("Sending deauth to: " + ssid);
 
-  // (Real packet injection would happen here)
+  // Find the target AP in the list
+  for (int i = 0; i <= current; i++) {
+    if (access_points[i].essid == ssid) {
+      // Send deauth packet (placeholder functionality)
+      Serial.print("Deauthenticating clients from AP: ");
+      Serial.print(access_points[i].essid);
+      Serial.print(" on channel ");
+      Serial.println(access_points[i].channel);
+      // Real deauth logic (e.g., packet injection) goes here
+    }
+  }
+}
+
+void scan() {
+  wifi_promiscuous_enable(0);
+  wifi_set_promiscuous_rx_cb(promisc_cb);
+  wifi_promiscuous_enable(1);
+  Serial.println("[!] Scanning for APs...");
+
+  for (int i = 0; i <= current; i++)
+    access_points[i].found = false;
+  
+  for (int i = 0; i < 2; i++) {
+    for (int p = 0; p < 13; p++) { // Wi-Fi channels 1-13
+      currentChannel = p + 1;
+      wifi_set_channel(currentChannel);
+      
+      Serial.print("Scanning channel: ");
+      Serial.println(currentChannel);
+      
+      delay(500); // Allow time for packet capture
+    }
+  }
+
+  Serial.println("[!] Done scanning");
+  clean_ap_list();
+  wifi_promiscuous_enable(0);
+  wifi_set_promiscuous_rx_cb(0);
+}
+
+// Promiscuous mode callback to process captured packets
+void promisc_cb(uint8_t* buf, uint16_t len) {
+  // Process packets to identify access points
+  // This function should parse beacon frames and extract SSIDs, channels, etc.
+  // Placeholder implementation
+  Serial.println("Packet received in promiscuous mode");
+}
+
+// Clean up AP list after scan
+void clean_ap_list() {
+  int index = 0;
+  for (int i = 0; i <= current; i++) {
+    if (access_points[i].found) {
+      access_points[index] = access_points[i];
+      index++;
+    }
+  }
+  current = index - 1;
+  Serial.println("Cleaned up AP list");
 }
