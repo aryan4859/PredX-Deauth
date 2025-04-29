@@ -43,8 +43,12 @@ void handleStop() {
 }
 
 void setup() {
-  Serial.begin(115200);
-  WiFi.mode(WIFI_STA);
+  Serial.begin(115200); 
+// Configure and start the ap
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("PredX", "predx1337");
+  Serial.println("Access Point started with SSID: PredX and Password: predx1337");
+  Serial.println("AP IP Address: " + WiFi.softAPIP().toString());
 
   // Initialize LittleFS
   if (!LittleFS.begin()) {
