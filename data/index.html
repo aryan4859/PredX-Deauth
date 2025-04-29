@@ -4,15 +4,79 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PredX</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
-    button { padding: 10px 20px; font-size: 16px; margin: 10px; }
-    .results { margin-top: 20px; text-align: left; }
+    :root {
+      --bg-dark: #0f0f0f;
+      --panel-dark: #1b1b1b;
+      --neon-green: #8cff00;
+      --accent-blue: #007acc;
+      --text-light: #e0e0e0;
+      --red: #ff4d4d;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      background: var(--bg-dark);
+      color: var(--text-light);
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: var(--neon-green);
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      margin: 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      background: var(--neon-green);
+      color: var(--bg-dark);
+      transition: opacity 0.2s;
+    }
+    button:hover {
+      opacity: 0.8;
+    }
+    .stop-button {
+      background: var(--red);
+    }
+    .stop-button:hover {
+      background: #e60000;
+    }
+    .results {
+      margin-top: 30px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      background: var(--panel-dark);
+      padding: 15px;
+      border-radius: 4px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+      text-align: left;
+    }
+    .results h3 {
+      margin-top: 0;
+      color: var(--neon-green);
+    }
+    #results ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    #results li {
+      padding: 8px 0;
+      border-bottom: 1px solid #333;
+      color: var(--text-light);
+    }
+    #results li:last-child {
+      border-bottom: none;
+    }
   </style>
 </head>
 <body>
   <h1>Wi-Fi Scanner</h1>
   <button onclick="scan()">Scan</button>
-  <button onclick="stop()">Stop</button>
+  <button class="stop-button" onclick="stop()">Stop</button>
   <div class="results">
     <h3>Scan Results:</h3>
     <div id="results">{SCAN_RESULTS}</div>
@@ -21,18 +85,12 @@
     function scan() {
       fetch('/scan')
         .then(response => response.text())
-        .then(data => {
-          console.log(data);
-          location.reload();
-        });
+        .then(data => { console.log(data); location.reload(); });
     }
     function stop() {
       fetch('/stop')
         .then(response => response.text())
-        .then(data => {
-          console.log(data);
-          location.reload();
-        });
+        .then(data => { console.log(data); location.reload(); });
     }
   </script>
 </body>
