@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-#include <LittleFS.h> // Include LittleFS for file handling
+#include <LittleFS.h>
 
 ESP8266WebServer webServer(80);
 
