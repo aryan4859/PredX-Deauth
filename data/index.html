@@ -1,42 +1,39 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="initial-scale=1.0, width=device-width">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PredX</title>
   <style>
-    .content {
-      max-width: 500px;
-      margin: auto;
-    }
-    table, th, td {
-      border: 1px solid black;
-      border-collapse: collapse;
-      padding-left: 10px;
-      padding-right: 10px;
-    }
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+    button { padding: 10px 20px; font-size: 16px; margin: 10px; }
+    .results { margin-top: 20px; text-align: left; }
   </style>
 </head>
 <body>
-  <div class="content">
-    <div>
-      <form style="display: inline-block;" method="post" action="/?deauth={deauth}">
-        <button style="display: inline-block;" {disabled}>{deauth_button}</button>
-      </form>
-      <form style="display: inline-block; padding-left: 8px;" method="post" action="/?hotspot={hotspot}">
-        <button style="display: inline-block;" {disabled}>{hotspot_button}</button>
-      </form>
-    </div>
-    </br>
-    <table>
-      <tr>
-        <th>SSID</th>
-        <th>BSSID</th>
-        <th>Channel</th>
-        <th>Select</th>
-      </tr>
-      <!-- Dynamic rows will be appended here by the C++ code -->
-    </table>
-    <!-- Success message -->
-    {success_message}
+  <h1>Wi-Fi Scanner</h1>
+  <button onclick="scan()">Scan</button>
+  <button onclick="stop()">Stop</button>
+  <div class="results">
+    <h3>Scan Results:</h3>
+    <div id="results">{SCAN_RESULTS}</div>
   </div>
+  <script>
+    function scan() {
+      fetch('/scan')
+        .then(response => response.text())
+        .then(data => {
+          console.log(data);
+          location.reload();
+        });
+    }
+    function stop() {
+      fetch('/stop')
+        .then(response => response.text())
+        .then(data => {
+          console.log(data);
+          location.reload();
+        });
+    }
+  </script>
 </body>
 </html>
