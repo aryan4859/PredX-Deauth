@@ -1,5 +1,10 @@
 # PredX-Deauth
 
+<p align="center">
+  <img src="./assets/logo.png" alt="PredX Logo" width="200"/>
+</p>
+
+
 PredX-Deauth is a powerful tool designed for Wi-Fi network testing and stress testing using deauthentication attacks. The tool provides a web-based interface for scanning nearby Wi-Fi networks and launching deauthentication (deauth) attacks on specific targets. This project is intended for educational and ethical purposes only.
 
 ## ⚠️ Legal Disclaimer
