@@ -26,17 +26,14 @@ void handleScan() {
 void handleSpectrum(){
   analyzeSpectrum();
 
-  String json = "{";
+  String jsonResponse = "{";
   for (int i = 1; i <= 13; i++) {
-    json += "\"";
-    json += String(i);  // Channel number
-    json += "\": ";
-    json += String(channelRSSI[i]);
-    if (i != 13) json += ",";
+    jsonResponse += "\"" + String(i) + "\": " + String(channelRSSI[i]) + ",";
   }
-  json += "}";
+  jsonResponse.remove(jsonResponse.length() - 1);  // Remove the trailing comma
+  jsonResponse += "}"; 
 
-  webServer.send(200, "application/json", json);
+  webServer.send(200, "application/json", jsonResponse);
 }
 
 void handleStop() {
