@@ -59,39 +59,38 @@
       margin-top: 0;
       color: var(--neon-green);
     }
-    #results ul {
+    #results ul, #spectrum ul {
       list-style: none;
       padding-left: 0;
     }
-    #results li {
+    #results li, #spectrum li {
       padding: 8px 0;
       border-bottom: 1px solid #333;
       color: var(--text-light);
     }
-    #results li:last-child {
+    #results li:last-child, #spectrum li:last-child {
       border-bottom: none;
     }
   </style>
 </head>
 <body>
-  <h1>Wi-Fi Scanner</h1>
+  <h1>Predx</h1>
   <button onclick="scan()">Scan</button>
+  <button onclick="spectrum()">Spectrum</button>
   <button class="stop-button" onclick="stop()">Stop</button>
+
   <div class="results">
     <h3>Scan Results:</h3>
     <div id="results">{SCAN_RESULTS}</div>
   </div>
-  <script>
-    function scan() {
-      fetch('/scan')
-        .then(response => response.text())
-        .then(data => { console.log(data); location.reload(); });
-    }
-    function stop() {
-      fetch('/stop')
-        .then(response => response.text())
-        .then(data => { console.log(data); location.reload(); });
-    }
-  </script>
+
+  <div class="results">
+    <h3>Channel Spectrum</h3>
+    <canvas id="spectrumChart" width="100%" height="300"></canvas>
+  </div>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Yscript -->
+<script src="./script.js"></script>
 </body>
 </html>

@@ -23,6 +23,22 @@ void handleScan() {
   webServer.send(200, "text/plain", "Scan Complete!");
 }
 
+void handleSpectrum(){
+  analyzeSpectrum();
+
+  String json = "{";
+  for (int i = 1; i <= 13; i++) {
+    json += "\"";
+    json += String(i);  // Channel number
+    json += "\": ";
+    json += String(channelRSSI[i]);
+    if (i != 13) json += ",";
+  }
+  json += "}";
+
+  webServer.send(200, "application/json", json);
+}
+
 void handleStop() {
   scanResults = "<p>Scanning Stopped</p>";
   webServer.send(200, "text/plain", "Stopped Scanning!");
@@ -43,6 +59,7 @@ void setupWebServer() {
   webServer.on("/", handleIndex);
   webServer.on("/scan", handleScan);
   webServer.on("/stop", handleStop);
+  webServer.on("/spectrum", handleSpectrum);
 
   webServer.begin();
   Serial.println("Web server started!");

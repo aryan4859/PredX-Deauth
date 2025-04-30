@@ -4,5 +4,8 @@
 #include <ESP8266WiFi.h>
 
 String getScanResults();
+void analyzeSpectrum();
+
+extern int channelRSSI[14];
 
 #endif
