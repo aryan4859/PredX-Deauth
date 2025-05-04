@@ -4,33 +4,41 @@ int channelRSSI[14] = {0};
 
 String getScanResults() {
   int n = WiFi.scanNetworks();
-  String result = "<ul>";
+  String json = "[";
+
   for (int i = 0; i < n; ++i) {
-    result += "<li>SSID: " + WiFi.SSID(i) + " | Signal: " + String(WiFi.RSSI(i)) + " dBm</li>";
+    json += "{";
+    json += "\"ssid\":\"" + WiFi.SSID(i) + "\",";
+    json += "\"bssid\":\"" + WiFi.BSSIDstr(i) + "\",";
+    json += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+    json += "\"channel\":" + String(WiFi.channel(i)) + ",";
+    json += "\"encryption\":" + String(WiFi.encryptionType(i));
+    json += "}";
+    if (i != n - 1) json += ",";
   }
-  result += "</ul>";
-  return result;
+
+  json += "]";
+  return json;
 }
 
-void analyzeSpectrum(){
-  for (int ch = 1; ch <= 13; ch++){
-    WiFi.disconnect();   
+void analyzeSpectrum() {
+  for (int ch = 1; ch <= 13; ch++) {
+    WiFi.disconnect();
     delay(10);
-    wifi_set_channel(ch);  
-    delay(200);  
+    wifi_set_channel(ch);
+    delay(200);
 
-    int maxRSSI = -100;  // Start with the minimum possible RSSI value
+    int maxRSSI = -100;
 
-    int n = WiFi.scanNetworks();  // Scan for available networks
+    int n = WiFi.scanNetworks();
     for (int i = 0; i < n; i++) {
-      int rssi = WiFi.RSSI(i);  // Get the RSSI value for each network
+      int rssi = WiFi.RSSI(i);
       if (rssi > maxRSSI) {
-        maxRSSI = rssi;  // Update the maxRSSI if the current one is higher
+        maxRSSI = rssi;
       }
+    }
 
+    channelRSSI[ch] = maxRSSI;
+    WiFi.scanDelete();
   }
-
-  channelRSSI[ch] = maxRSSI;
-  WiFi.scanDelete();
-}
 }

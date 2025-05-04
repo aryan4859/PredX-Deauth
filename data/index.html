@@ -1,164 +1,91 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PredX</title>
+  <title>WiFi Deauth Tool</title>
   <style>
-    :root {
-      --bg-dark: #0f0f0f;
-      --panel-dark: #1b1b1b;
-      --neon-green: #8cff00;
-      --accent-blue: #007acc;
-      --text-light: #e0e0e0;
-      --red: #ff4d4d;
-    }
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      margin: 0;
-      padding: 20px;
-      background: var(--bg-dark);
-      color: var(--text-light);
     }
     h1 {
-      margin-bottom: 20px;
-      color: var(--neon-green);
+      color: #FF0000;
     }
     button {
-      padding: 12px 24px;
-      font-size: 16px;
-      margin: 10px;
+      padding: 10px;
+      background-color: #FF0000;
+      color: white;
       border: none;
-      border-radius: 4px;
       cursor: pointer;
-      background: var(--neon-green);
-      color: var(--bg-dark);
-      transition: opacity 0.2s;
-    }
-    button:hover {
-      opacity: 0.8;
-    }
-    .stop-button {
-      background: var(--red);
-    }
-    .stop-button:hover {
-      background: #e60000;
-    }
-    .results {
-      margin-top: 30px;
-      max-width: 600px;
-      margin-left: auto;
-      margin-right: auto;
-      background: var(--panel-dark);
-      padding: 15px;
-      border-radius: 4px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-      text-align: left;
-    }
-    .results h3 {
-      margin-top: 0;
-      color: var(--neon-green);
-    }
-    #results ul, #spectrum ul {
-      list-style: none;
-      padding-left: 0;
-    }
-    #results li, #spectrum li {
-      padding: 8px 0;
-      border-bottom: 1px solid #333;
-      color: var(--text-light);
-    }
-    #results li:last-child, #spectrum li:last-child {
-      border-bottom: none;
     }
   </style>
 </head>
 <body>
-  <h1>Predx</h1>
-  <button onclick="scan()">Scan</button>
-  <button onclick="spectrum()">Spectrum</button>
-  <button class="stop-button" onclick="stop()">Stop</button>
-
-  <div class="results">
-    <h3>Scan Results:</h3>
-    <div id="results">{SCAN_RESULTS}</div>
+  <h1>WiFi Deauthentication Tool</h1>
+  
+  <h2>Scan Results</h2>
+  <div id="scanResults">
+    <!-- Wi-Fi Scan results will be inserted here -->
+    {SCAN_RESULTS}
   </div>
 
-  <div class="results">
-    <h3>Channel Spectrum</h3>
-    <canvas id="spectrumChart" width="100%" height="300"></canvas>
-  </div>
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<!-- Yscript -->
-<script>
-  function scan() {
-    fetch('/scan')
-      .then(response => response.text())
-      .then(data => { console.log(data); location.reload(); });
-  }
+  <h2>Select Target for Deauth</h2>
+  <form action="/deauth" method="GET">
+    <label for="ap">Select AP:</label>
+    <select name="ap" id="ap">
+      <!-- Available APs will be inserted here -->
+    </select><br><br>
+    
+    <label for="client">Select Client:</label>
+    <select name="client" id="client">
+      <!-- Available clients will be inserted here -->
+    </select><br><br>
 
-  function spectrum() {
-    fetch('/spectrum')
-    .then(response => response.json())  // Ensure it's parsed as JSON
-    .then(data => {
-      if (data && data.channels) {  // Check if data exists
-        window.spectrumChart.data = data.channels;  // Assign to the chart data
-        drawSpectrumChart();  // Call the draw function after setting the data
-      } else {
-        console.error("Invalid spectrum data");
-      }
-    })
-    .catch(error => {
-      console.error("Error fetching spectrum:", error);
-    });
-  }
+    <button type="submit">Start Attack</button>
+  </form>
 
-  function stop() {
-    fetch('/stop')
-      .then(response => response.text())
-      .then(data => { console.log(data); location.reload(); });
-  }
+  <script>
+    // Fetch Wi-Fi scan results and fill the dropdown options
+    function loadScanResults() {
+      fetch('/scan')
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById('scanResults').innerHTML = data;
 
-  function drawSpectrumChart(data) {
-    const ctx = document.getElementById('spectrumChart').getContext('2d');
-    const labels = Object.keys(data).map(ch => "CH " + ch);
-    const values = Object.values(data);
+          // Now populate AP dropdown
+          const apSelect = document.getElementById('ap');
+          const clientSelect = document.getElementById('client');
+          
+          // Example: Populate AP dropdown
+          // Add your logic to extract SSID and Clients for the dropdowns
+          const apList = data.match(/SSID: (.*?) \|/g);
+          const clientList = data.match(/Client: (.*?) \|/g);
 
-    if (window.spectrumChart) {
-      window.spectrumChart.data.labels = labels;
-      window.spectrumChart.data.datasets[0].data = values;
-      window.spectrumChart.update();
-      return;
+          apSelect.innerHTML = '';
+          clientSelect.innerHTML = '';
+
+          if (apList) {
+            apList.forEach((ap, index) => {
+              const option = document.createElement("option");
+              option.value = ap.split("SSID: ")[1].split(" |")[0]; // Extract SSID
+              option.text = option.value;
+              apSelect.appendChild(option);
+            });
+          }
+          
+          if (clientList) {
+            clientList.forEach((client, index) => {
+              const option = document.createElement("option");
+              option.value = client.split("Client: ")[1].split(" |")[0]; // Extract Client info
+              option.text = option.value;
+              clientSelect.appendChild(option);
+            });
+          }
+        });
     }
 
-    window.spectrumChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: 'RSSI (dBm)',
-          data: values,
-          backgroundColor: '#8cff00'
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          y: {
-            beginAtZero: false,
-            reverse: true,
-            min: -100,
-            max: -10,
-            title: {
-              display: true,
-              text: 'Signal Strength (dBm)'
-            }
-          }
-        }
-      }
-    });
-  }
-</script>
+    loadScanResults(); // Call the function to load scan results on page load
+  </script>
 </body>
 </html>

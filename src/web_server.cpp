@@ -2,6 +2,7 @@
 #include <ESP8266WebServer.h>
 #include <LittleFS.h>
 #include "wifi_scan.h"
+#include "attack.h"
 
 ESP8266WebServer webServer(80);
 String scanResults;
@@ -20,7 +21,7 @@ void handleIndex() {
 
 void handleScan() {
   scanResults = getScanResults();
-  webServer.send(200, "text/plain", "Scan Complete!");
+  webServer.send(200, "application/json", scanResults);
 }
 
 void handleSpectrum(){
@@ -41,6 +42,20 @@ void handleStop() {
   webServer.send(200, "text/plain", "Stopped Scanning!");
 }
 
+void handleDeauth() {
+  if (!webServer.hasArg("ap") || !webServer.hasArg("client")) {
+      webServer.send(400, "text/plain", "Missing parameters: ap or client");
+      return;
+  }
+
+  String targetAP = webServer.arg("ap");
+  String targetClient = webServer.arg("client");
+
+  sendDeauth(targetAP, targetClient);
+  webServer.send(200, "text/plain", "Deauth attack initiated!");
+}
+
+
 void setupWebServer() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP("PredX", "predx1337");
@@ -53,10 +68,12 @@ void setupWebServer() {
     return;
   }
 
+
   webServer.on("/", handleIndex);
   webServer.on("/scan", handleScan);
   webServer.on("/stop", handleStop);
   webServer.on("/spectrum", handleSpectrum);
+  webServer.on("/deauth", handleDeauth);
 
   webServer.begin();
   Serial.println("Web server started!");
