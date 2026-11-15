@@ -1,341 +1,155 @@
 #include <WebServer.h>
+#include <string.h>
+#include "monitor.h"
 #include "web_interface.h"
-#include "definitions.h"
-#include "deauth.h"
 
 WebServer server(80);
-int num_networks;
 
-// Move the function declaration to the top
-String getEncryptionType(wifi_auth_mode_t encryptionType);
-
-void redirect_root() {
-  server.sendHeader("Location", "/");
-  server.send(301);
+namespace {
+String json_string(const char *value) {
+  String escaped;
+  escaped.reserve(strlen(value) + 8);
+  escaped += '"';
+  for (const char *cursor = value; *cursor; ++cursor) {
+    const uint8_t character = static_cast<uint8_t>(*cursor);
+    if (character == '"' || character == '\\') {
+      escaped += '\\';
+      escaped += static_cast<char>(character);
+    } else if (character >= 0x20) {
+      escaped += static_cast<char>(character);
+    }
+  }
+  escaped += '"';
+  return escaped;
 }
 
 void handle_root() {
-  String html = R"(
-<!DOCTYPE html>
+  static const char page[] PROGMEM = R"HTML(
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32-Deauther</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }
-        h1, h2 {
-            color: #2c3e50;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #3498db;
-            color: white;
-        }
-        tr:nth-child(even) {
-            background-color: #f2f2f2;
-        }
-        form {
-            background-color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        input[type="text"], input[type="submit"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        input[type="submit"] {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        input[type="submit"]:hover {
-            background-color: #2980b9;
-        }
-    </style>
-</head>
-<body>
-    <h1>ESP32-Deauther</h1>
-    
-    <h2>WiFi Networks</h2>
-    <table>
-        <tr>
-            <th>Number</th>
-            <th>SSID</th>
-            <th>BSSID</th>
-            <th>Channel</th>
-            <th>RSSI</th>
-            <th>Encryption</th>
-        </tr>
-)";
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827"><title>PredX Guardian</title>
+<style>
+:root{color-scheme:dark;--bg:#101827;--panel:#192438;--line:#2a3952;--text:#e7edf7;--muted:#9aa9bd;--accent:#65d6ad;--warn:#ffbd69}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#1b2b42,var(--bg) 60%);color:var(--text);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1100px;margin:auto;padding:28px 20px 50px}header{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+h1{font-size:clamp(1.7rem,4vw,2.4rem);margin:0}.subtitle,.muted{color:var(--muted)}.badge{border:1px solid #26684f;color:var(--accent);border-radius:99px;padding:5px 12px;font-size:.85rem}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:24px 0}
+.card,section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}.metric{font-size:1.9rem;font-weight:700;margin-top:3px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}h2{font-size:1.15rem;margin:0 0 12px}
+button{border:0;border-radius:8px;padding:10px 14px;background:var(--accent);color:#082218;font-weight:700;cursor:pointer}button.secondary{background:#33445e;color:var(--text)}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:620px}th,td{text-align:left;padding:11px 9px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:.82rem;font-weight:600}
+.spacer{height:16px}.events{display:grid;gap:9px}.event{border:1px solid var(--line);border-left:3px solid var(--warn);padding:11px 13px;border-radius:8px;background:#141f31}
+.event.info{border-left-color:var(--accent)}.event strong{margin-right:8px}.empty{color:var(--muted);padding:12px 0}.note{font-size:.88rem;color:var(--muted);margin:12px 0 0}
+</style></head>
+<body><main>
+<header><div><h1>PredX Guardian</h1><div class="subtitle">Passive Wi-Fi security monitor</div></div><span class="badge" id="status">Starting…</span></header>
+<div class="cards">
+<div class="card"><div class="muted">Monitor channel</div><div class="metric" id="channel">—</div></div>
+<div class="card"><div class="muted">Access points observed</div><div class="metric" id="apCount">0</div></div>
+<div class="card"><div class="muted">Deauth / disassoc frames</div><div class="metric" id="frameCount">0</div></div>
+<div class="card"><div class="muted">Security events</div><div class="metric" id="eventCount">0</div></div>
+</div>
+<section><div class="row"><h2>Observed access points</h2><span class="muted">Beacon and probe-response frames on this channel</span></div>
+<div class="table-wrap"><table><thead><tr><th>SSID</th><th>BSSID</th><th>Security</th><th>Signal</th><th>Channel</th></tr></thead><tbody id="aps"></tbody></table></div>
+<div class="empty" id="noAps">Waiting for nearby access point beacons…</div>
+<p class="note">A matching SSID with weaker security is a review signal, not proof of a rogue AP. Confirm against your known network inventory.</p></section>
+<div class="spacer"></div>
+<section><div class="row"><div><h2>Security event log</h2><div class="muted">Recent deauthentication, disassociation, and SSID security mismatch alerts</div></div>
+<div class="row"><button id="simulate" class="secondary">Add simulated event</button><button id="clear" class="secondary">Clear log</button></div></div>
+<div class="events" id="events"></div><div class="empty" id="noEvents">No events recorded.</div>
+<p class="note">Simulation only adds a labeled example to this log; it sends no radio frames. Data is held in RAM and resets on reboot.</p></section>
+<p class="note">Passive monitor is fixed to channel <span id="channelNote">—</span>; other channels are not observed. This tool does not transmit deauthentication frames.</p>
+</main>
+<script>
+const text=(id,value)=>document.getElementById(id).textContent=value;
+function cell(row,value){const td=document.createElement("td");td.textContent=value;row.appendChild(td)}
+function render(data){
+ text("status",data.active?"MONITORING":"MONITOR OFF");text("channel",data.channel);text("channelNote",data.channel);
+ text("apCount",data.aps.length);text("frameCount",data.deauthCount);text("eventCount",data.events.length);
+ const aps=document.getElementById("aps");aps.replaceChildren();
+ data.aps.forEach(ap=>{const row=document.createElement("tr");cell(row,ap.ssid);cell(row,ap.bssid);cell(row,ap.security);cell(row,ap.rssi+" dBm");cell(row,String(ap.channel));aps.appendChild(row)});
+ document.getElementById("noAps").hidden=data.aps.length!==0;
+ const events=document.getElementById("events");events.replaceChildren();
+ data.events.slice().reverse().forEach(event=>{
+  const item=document.createElement("div");item.className="event "+(event.severity==="info"?"info":"");
+  const heading=document.createElement("div");const title=document.createElement("strong");title.textContent=event.type+(event.simulated?" · SIMULATED":"");heading.appendChild(title);
+  const severity=document.createElement("span");severity.textContent=event.severity;severity.className="muted";heading.appendChild(severity);item.appendChild(heading);
+  const detail=document.createElement("div");detail.textContent=(event.ssid||"")+" · "+event.bssid+" · count "+event.count;item.appendChild(detail);
+  const time=document.createElement("small");time.className="muted";time.textContent="Uptime "+Math.floor(event.timestamp/1000)+"s";item.appendChild(time);events.appendChild(item);
+ });
+ document.getElementById("noEvents").hidden=data.events.length!==0;
+}
+async function refresh(){try{const response=await fetch("/api/state",{cache:"no-store"});if(!response.ok)throw new Error("state request failed");render(await response.json())}catch(e){text("status","OFFLINE")}}
+document.getElementById("simulate").addEventListener("click",async()=>{await fetch("/api/simulate",{method:"POST"});refresh()});
+document.getElementById("clear").addEventListener("click",async()=>{await fetch("/api/clear",{method:"POST"});refresh()});
+refresh();setInterval(refresh,2000);
+</script></body></html>)HTML";
+  server.send_P(200, "text/html", page);
+}
 
-  for (int i = 0; i < num_networks; i++) {
-    String encryption = getEncryptionType(WiFi.encryptionType(i));
-    html += "<tr><td>" + String(i) + "</td><td>" + WiFi.SSID(i) + "</td><td>" + WiFi.BSSIDstr(i) + "</td><td>" + 
-            String(WiFi.channel(i)) + "</td><td>" + String(WiFi.RSSI(i)) + "</td><td>" + encryption + "</td></tr>";
+void handle_state() {
+  static ObservedAccessPoint aps[32];
+  static SecurityEvent events[32];
+  const size_t ap_count = get_access_points(aps, 32);
+  const size_t event_count = get_security_events(events, 32);
+
+  String json;
+  json.reserve(128 + ap_count * 110 + event_count * 150);
+  json += "{\"active\":";
+  json += monitor_is_active() ? "true" : "false";
+  json += ",\"channel\":";
+  json += String(monitor_channel());
+  json += ",\"deauthCount\":";
+  json += String(deauth_frame_count());
+  json += ",\"aps\":[";
+  for (size_t i = 0; i < ap_count; ++i) {
+    if (i) json += ',';
+    json += "{\"ssid\":" + json_string(aps[i].ssid) +
+            ",\"bssid\":" + json_string(aps[i].bssid) +
+            ",\"security\":" + json_string(aps[i].security) +
+            ",\"rssi\":" + String(aps[i].rssi) +
+            ",\"channel\":" + String(aps[i].channel) + "}";
   }
-
-  html += R"(
-    </table>
-
-    <form method="post" action="/rescan">
-        <input type="submit" value="Rescan networks">
-    </form>
-
-    <form method="post" action="/deauth">
-        <h2>Launch Deauth-Attack</h2>
-        <input type="text" name="net_num" placeholder="Network Number">
-        <input type="text" name="reason" placeholder="Reason code">
-        <input type="submit" value="Launch Attack">
-    </form>
-
-    <p>Eliminated stations: )" + String(eliminated_stations) + R"(</p>
-
-    <form method="post" action="/deauth_all">
-        <h2>Deauth all Networks</h2>
-        <input type="text" name="reason" placeholder="Reason code">
-        <input type="submit" value="Deauth All">
-    </form>
-
-    <form method="post" action="/stop">
-        <input type="submit" value="Stop Deauth-Attack">
-    </form>
-
-    <h2>Reason Codes</h2>
-    <table>
-        <tr>
-            <th>Code</th>
-            <th>Meaning</th>
-        </tr>
-        <tr><td>0</td><td>Reserved.</td></tr>
-        <tr><td>1</td><td>Unspecified reason.</td></tr>
-        <tr><td>2</td><td>Previous authentication no longer valid.</td></tr>
-        <tr><td>3</td><td>Deauthenticated because sending station (STA) is leaving or has left Independent Basic Service Set (IBSS) or ESS.</td></tr>
-        <tr><td>4</td><td>Disassociated due to inactivity.</td></tr>
-        <tr><td>5</td><td>Disassociated because WAP device is unable to handle all currently associated STAs.</td></tr>
-        <tr><td>6</td><td>Class 2 frame received from nonauthenticated STA.</td></tr>
-        <tr><td>7</td><td>Class 3 frame received from nonassociated STA.</td></tr>
-        <tr><td>8</td><td>Disassociated because sending STA is leaving or has left Basic Service Set (BSS).</td></tr>
-        <tr><td>9</td><td>STA requesting (re)association is not authenticated with responding STA.</td></tr>
-        <tr><td>10</td><td>Disassociated because the information in the Power Capability element is unacceptable.</td></tr>
-        <tr><td>11</td><td>Disassociated because the information in the Supported Channels element is unacceptable.</td></tr>
-        <tr><td>12</td><td>Disassociated due to BSS Transition Management.</td></tr>
-        <tr><td>13</td><td>Invalid element, that is, an element defined in this standard for which the content does not meet the specifications in Clause 8.</td></tr>
-        <tr><td>14</td><td>Message integrity code (MIC) failure.</td></tr>
-        <tr><td>15</td><td>4-Way Handshake timeout.</td></tr>
-        <tr><td>16</td><td>Group Key Handshake timeout.</td></tr>
-        <tr><td>17</td><td>Element in 4-Way Handshake different from (Re)Association Request/ Probe Response/Beacon frame.</td></tr>
-        <tr><td>18</td><td>Invalid group cipher.</td></tr>
-        <tr><td>19</td><td>Invalid pairwise cipher.</td></tr>
-        <tr><td>20</td><td>Invalid AKMP.</td></tr>
-        <tr><td>21</td><td>Unsupported RSNE version.</td></tr>
-        <tr><td>22</td><td>Invalid RSNE capabilities.</td></tr>
-        <tr><td>23</td><td>IEEE 802.1X authentication failed.</td></tr>
-        <tr><td>24</td><td>Cipher suite rejected because of the security policy.</td></tr>
-    </table>
-</body>
-</html>
-)";
-
-  server.send(200, "text/html", html);
-}
-
-
-void handle_deauth() {
-  int wifi_number = server.arg("net_num").toInt();
-  uint16_t reason = server.arg("reason").toInt();
-
-  String html = R"(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deauth Attack</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-        }
-        .alert {
-            background-color: #4CAF50;
-            color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            text-align: center;
-        }
-        .alert.error {
-            background-color: #f44336;
-        }
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            margin-top: 20px;
-            background-color: #008CBA;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-        }
-        .button:hover {
-            background-color: #005f73;
-        }
-    </style>
-</head>
-<body>
-    <div class="alert)";
-
-  if (wifi_number < num_networks) {
-    html += R"(">
-        <h2>Starting Deauth-Attack!</h2>
-        <p>Deauthenticating network number: )" + String(wifi_number) + R"(</p>
-        <p>Reason code: )" + String(reason) + R"(</p>
-    </div>)";
-    start_deauth(wifi_number, DEAUTH_TYPE_SINGLE, reason);
-  } else {
-    html += R"( error">
-        <h2>Error: Invalid Network Number</h2>
-        <p>Please select a valid network number.</p>
-    </div>)";
+  json += "],\"events\":[";
+  for (size_t i = 0; i < event_count; ++i) {
+    if (i) json += ',';
+    json += "{\"timestamp\":" + String(events[i].timestamp_ms) +
+            ",\"type\":" + json_string(events[i].type) +
+            ",\"severity\":" + json_string(events[i].severity) +
+            ",\"ssid\":" + json_string(events[i].ssid) +
+            ",\"bssid\":" + json_string(events[i].bssid) +
+            ",\"count\":" + String(events[i].count) +
+            ",\"simulated\":" + (events[i].simulated ? "true" : "false") + "}";
   }
-
-  html += R"(
-    <a href="/" class="button">Back to Home</a>
-</body>
-</html>
-  )";
-
-  server.send(200, "text/html", html);
+  json += "]}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
 }
 
-void handle_deauth_all() {
-  uint16_t reason = server.arg("reason").toInt();
-
-  String html = R"(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deauth All Networks</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-        }
-        .alert {
-            background-color: #ff9800;
-            color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            text-align: center;
-        }
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            margin-top: 20px;
-            background-color: #008CBA;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-        }
-        .button:hover {
-            background-color: #005f73;
-        }
-    </style>
-</head>
-<body>
-    <div class="alert">
-        <h2>Starting Deauth-Attack on All Networks!</h2>
-        <p>WiFi will shut down now. To stop the attack, please reset the ESP32.</p>
-        <p>Reason code: )" + String(reason) + R"(</p>
-    </div>
-</body>
-</html>
-  )";
-
-  server.send(200, "text/html", html);
-  server.stop();
-  start_deauth(0, DEAUTH_TYPE_ALL, reason);
+void handle_simulate() {
+  add_simulated_event();
+  server.send(202, "application/json", "{\"ok\":true,\"simulated\":true}");
 }
 
-void handle_rescan() {
-  num_networks = WiFi.scanNetworks();
-  redirect_root();
+void handle_clear() {
+  clear_security_events();
+  server.send(200, "application/json", "{\"ok\":true}");
 }
-
-void handle_stop() {
-  stop_deauth();
-  redirect_root();
 }
 
 void start_web_interface() {
-  server.on("/", handle_root);
-  server.on("/deauth", handle_deauth);
-  server.on("/deauth_all", handle_deauth_all);
-  server.on("/rescan", handle_rescan);
-  server.on("/stop", handle_stop);
-
+  server.on("/", HTTP_GET, handle_root);
+  server.on("/api/state", HTTP_GET, handle_state);
+  server.on("/api/simulate", HTTP_POST, handle_simulate);
+  server.on("/api/clear", HTTP_POST, handle_clear);
+  server.onNotFound([]() {
+    server.send(404, "application/json", "{\"error\":\"not found\"}");
+  });
   server.begin();
 }
 
 void web_interface_handle_client() {
   server.handleClient();
-}
-
-// The function implementation can stay where it is
-String getEncryptionType(wifi_auth_mode_t encryptionType) {
-  switch (encryptionType) {
-    case WIFI_AUTH_OPEN:
-      return "Open";
-    case WIFI_AUTH_WEP:
-      return "WEP";
-    case WIFI_AUTH_WPA_PSK:
-      return "WPA_PSK";
-    case WIFI_AUTH_WPA2_PSK:
-      return "WPA2_PSK";
-    case WIFI_AUTH_WPA_WPA2_PSK:
-      return "WPA_WPA2_PSK";
-    case WIFI_AUTH_WPA2_ENTERPRISE:
-      return "WPA2_ENTERPRISE";
-    default:
-      return "UNKNOWN";
-  }
 }
